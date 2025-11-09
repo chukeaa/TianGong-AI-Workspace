@@ -1,7 +1,7 @@
 """
 Execution utilities that expose controlled shell and Python runtimes.
 
-These helpers allow higher-level agents (Codex, LangChain, DeepAgents, etc.) to
+These helpers allow higher-level agents (Codex, LangChain, workspace agent, etc.) to
 reliably run commands while capturing structured outputs that can be surfaced to
 callers or persisted for auditing.
 """

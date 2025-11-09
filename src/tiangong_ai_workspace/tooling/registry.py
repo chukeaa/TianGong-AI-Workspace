@@ -84,10 +84,10 @@ register_many(
         ),
         ToolDescriptor(
             name="agents.deep",
-            description="DeepAgents-powered autonomous agent with shell, Python, Tavily, and document workflows.",
+            description="Workspace autonomous agent built with LangGraph (shell, Python, Tavily, document workflows).",
             category="agent",
             entrypoint="tiangong_ai_workspace.agents.deep_agent.build_workspace_deep_agent",
-            tags=("deepagents", "planner"),
+            tags=("langgraph", "planner"),
         ),
         ToolDescriptor(
             name="runtime.shell",

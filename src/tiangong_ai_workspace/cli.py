@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 import typer
+from langchain_core.messages import HumanMessage
 
 from . import __version__
 from .agents import DocumentWorkflowConfig, DocumentWorkflowType, run_document_workflow
@@ -31,7 +32,7 @@ mcp_app = typer.Typer(help="Interact with Model Context Protocol services config
 app.add_typer(mcp_app, name="mcp")
 docs_app = typer.Typer(help="Document-generation workflows driven by LangChain/LangGraph.")
 app.add_typer(docs_app, name="docs")
-agents_app = typer.Typer(help="General-purpose DeepAgents workflows.")
+agents_app = typer.Typer(help="General-purpose workspace agent workflows.")
 app.add_typer(agents_app, name="agents")
 
 # (command, label) pairs for CLI integrations that the workspace cares about.
@@ -225,11 +226,7 @@ def agents_list(
 @agents_app.command("run")
 def agents_run(
     task: str = typer.Argument(..., help="High-level objective for the deep agent."),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        help="Override the default model identifier passed to DeepAgents.",
-    ),
+    model: Optional[str] = typer.Option(None, "--model", help="Override the default model used by the planner."),
     system_prompt: Optional[str] = typer.Option(
         None,
         "--system-prompt",
@@ -241,7 +238,7 @@ def agents_run(
     no_document: bool = typer.Option(False, "--no-document", help="Disable document generation tool."),
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
 ) -> None:
-    """Run the DeepAgents-powered workspace agent on a free-form task."""
+    """Run the workspace autonomous agent on a free-form task."""
 
     try:
         agent = build_workspace_deep_agent(
@@ -257,10 +254,13 @@ def agents_run(
         _emit_response(response, json_output)
         raise typer.Exit(code=1) from exc
 
-    agent_input = {"messages": [{"role": "user", "content": task}]}
+    agent_input = {
+        "messages": [HumanMessage(content=task)],
+        "iterations": 0,
+    }
     result = agent.invoke(agent_input)
     final_message = _extract_final_response(result)
-    payload = {"final_response": final_message}
+    payload = {"final_response": final_message, "state": result}
     response = WorkspaceResponse.ok(payload=payload, message="Deep agent run completed.")
     _emit_response(response, json_output)
 
@@ -459,6 +459,8 @@ def invoke_mcp_tool(
 
 
 def _extract_final_response(result: Any) -> str:
+    if isinstance(result, Mapping) and "final_response" in result:
+        return str(result["final_response"])
     if isinstance(result, Mapping):
         messages = result.get("messages")
         if isinstance(messages, Sequence) and messages:

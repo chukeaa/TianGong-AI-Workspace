@@ -4,6 +4,8 @@ import json
 from typing import Any
 
 import pytest
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import Runnable
 
 from tiangong_ai_workspace.agents.deep_agent import build_workspace_deep_agent
 from tiangong_ai_workspace.secrets import MCPServerSecrets, Secrets
@@ -63,19 +65,30 @@ def test_python_executor_captures_output() -> None:
     assert result.stderr == ""
 
 
-def test_build_workspace_deep_agent_invokes_create_deep_agent(monkeypatch) -> None:
-    captured: dict[str, Any] = {}
+class StubPlanner(Runnable):
+    """Deterministic planner used for testing the workspace agent."""
 
-    def fake_create_deep_agent(*, tools: Any, system_prompt: str, model: Any, subagents: Any):
-        captured["tools"] = tools
-        captured["system_prompt"] = system_prompt
-        captured["model"] = model
-        captured["subagents"] = subagents
-        return {"agent": "ok"}
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = responses
 
-    monkeypatch.setattr("tiangong_ai_workspace.agents.deep_agent.create_deep_agent", fake_create_deep_agent)
+    def invoke(self, _: Any, config: Any | None = None) -> str:  # type: ignore[override]
+        if not self._responses:
+            raise RuntimeError("StubPlanner has no responses left")
+        return self._responses.pop(0)
 
-    agent = build_workspace_deep_agent(model="fake-model", include_tavily=False)
-    assert agent == {"agent": "ok"}
-    assert captured["tools"]
-    assert captured["subagents"]
+
+def test_build_workspace_deep_agent_runs_to_completion() -> None:
+    planner = StubPlanner(
+        [
+            '{"thought": "All done.", "action": "finish", "final_response": "Completed task."}',
+        ]
+    )
+    agent = build_workspace_deep_agent(
+        llm=planner,
+        include_shell=False,
+        include_python=False,
+        include_tavily=False,
+        include_document_agent=False,
+    )
+    result = agent.invoke({"messages": [HumanMessage(content="Test task")], "iterations": 0})
+    assert result["final_response"] == "Completed task."

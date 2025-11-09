@@ -52,6 +52,7 @@ class OpenAIModelFactory:
         purpose: ModelPurpose = "general",
         temperature: float = 0.4,
         timeout: int | None = None,
+        model_override: str | None = None,
     ) -> ChatOpenAI:
         """
         Construct a configured `ChatOpenAI` client with the requested purpose.
@@ -66,7 +67,7 @@ class OpenAIModelFactory:
             Optional timeout (seconds) forwarded to the underlying client.
         """
 
-        model_name = self._select_model(purpose)
+        model_name = model_override or self._select_model(purpose)
         creds: OpenAISecrets = self._secrets.openai  # type: ignore[assignment]
         return ChatOpenAI(
             api_key=creds.api_key,
