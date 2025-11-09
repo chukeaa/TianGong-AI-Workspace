@@ -82,5 +82,26 @@ register_many(
             entrypoint="tiangong_ai_workspace.tooling.tavily.TavilySearchClient.search",
             tags=("research", "search"),
         ),
+        ToolDescriptor(
+            name="agents.deep",
+            description="DeepAgents-powered autonomous agent with shell, Python, Tavily, and document workflows.",
+            category="agent",
+            entrypoint="tiangong_ai_workspace.agents.deep_agent.build_workspace_deep_agent",
+            tags=("deepagents", "planner"),
+        ),
+        ToolDescriptor(
+            name="runtime.shell",
+            description="Shell executor that returns structured stdout/stderr for commands.",
+            category="runtime",
+            entrypoint="tiangong_ai_workspace.tooling.executors.ShellExecutor.run",
+            tags=("shell", "commands"),
+        ),
+        ToolDescriptor(
+            name="runtime.python",
+            description="Python executor for dynamic scripting with captured stdout/stderr.",
+            category="runtime",
+            entrypoint="tiangong_ai_workspace.tooling.executors.PythonExecutor.run",
+            tags=("python", "scripting"),
+        ),
     ]
 )

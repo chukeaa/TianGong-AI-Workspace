@@ -22,6 +22,7 @@ dependencies = [
     "langchain>=1.0.5",
     "langchain-openai>=1.0.2",
     "langgraph>=1.0.2",
+    "deepagents>=0.2.5",
 ]
 
 [dependency-groups]
@@ -60,3 +61,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:AgentStatePydantic has been moved:LangGraphDeprecatedSinceV10",
+]

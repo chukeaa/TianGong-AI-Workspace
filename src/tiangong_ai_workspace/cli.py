@@ -13,12 +13,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Tuple
+from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 import typer
 
 from . import __version__
 from .agents import DocumentWorkflowConfig, DocumentWorkflowType, run_document_workflow
+from .agents.deep_agent import build_workspace_deep_agent
 from .mcp_client import MCPToolClient
 from .secrets import MCPServerSecrets, discover_secrets_path, load_secrets
 from .tooling import WorkspaceResponse, list_registered_tools
@@ -30,6 +31,8 @@ mcp_app = typer.Typer(help="Interact with Model Context Protocol services config
 app.add_typer(mcp_app, name="mcp")
 docs_app = typer.Typer(help="Document-generation workflows driven by LangChain/LangGraph.")
 app.add_typer(docs_app, name="docs")
+agents_app = typer.Typer(help="General-purpose DeepAgents workflows.")
+app.add_typer(agents_app, name="agents")
 
 # (command, label) pairs for CLI integrations that the workspace cares about.
 REGISTERED_TOOLS: Iterable[Tuple[str, str]] = (
@@ -189,6 +192,81 @@ def docs_list(
     if not json_output:
         typer.echo("")
         typer.echo("Run `uv run tiangong-workspace docs run --help` to generate a document.")
+
+
+@agents_app.command("list")
+def agents_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """List workspace-level agents and runtime executors."""
+
+    registry = list_registered_tools()
+    items = [
+        {
+            "name": descriptor.name,
+            "description": descriptor.description,
+            "category": descriptor.category,
+            "entrypoint": descriptor.entrypoint,
+            "tags": list(descriptor.tags),
+        }
+        for descriptor in registry.values()
+        if descriptor.category in {"agent", "runtime"}
+    ]
+
+    response = WorkspaceResponse.ok(payload={"agents": items}, message="Available agents and runtime executors.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        for item in items:
+            typer.echo(f"- {item['name']}: {item['description']} [{item['category']}]")
+
+
+@agents_app.command("run")
+def agents_run(
+    task: str = typer.Argument(..., help="High-level objective for the deep agent."),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Override the default model identifier passed to DeepAgents.",
+    ),
+    system_prompt: Optional[str] = typer.Option(
+        None,
+        "--system-prompt",
+        help="Custom system prompt for the agent planner.",
+    ),
+    no_shell: bool = typer.Option(False, "--no-shell", help="Disable shell command execution."),
+    no_python: bool = typer.Option(False, "--no-python", help="Disable Python execution tool."),
+    no_tavily: bool = typer.Option(False, "--no-tavily", help="Disable Tavily web search tool."),
+    no_document: bool = typer.Option(False, "--no-document", help="Disable document generation tool."),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """Run the DeepAgents-powered workspace agent on a free-form task."""
+
+    try:
+        agent = build_workspace_deep_agent(
+            model=model,
+            include_shell=not no_shell,
+            include_python=not no_python,
+            include_tavily=not no_tavily,
+            include_document_agent=not no_document,
+            system_prompt=system_prompt,
+        )
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        response = WorkspaceResponse.error("Failed to initialise deep agent.", errors=(str(exc),))
+        _emit_response(response, json_output)
+        raise typer.Exit(code=1) from exc
+
+    agent_input = {"messages": [{"role": "user", "content": task}]}
+    result = agent.invoke(agent_input)
+    final_message = _extract_final_response(result)
+    payload = {"final_response": final_message}
+    response = WorkspaceResponse.ok(payload=payload, message="Deep agent run completed.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo(final_message or "(no response)")
 
 
 @docs_app.command("run")
@@ -378,6 +456,26 @@ def invoke_mcp_tool(
         typer.echo("\nAttachments:")
         for attachment in attachments:
             typer.echo(_format_result(attachment))
+
+
+def _extract_final_response(result: Any) -> str:
+    if isinstance(result, Mapping):
+        messages = result.get("messages")
+        if isinstance(messages, Sequence) and messages:
+            last = messages[-1]
+            if isinstance(last, Mapping):
+                content = last.get("content")
+                if isinstance(content, list):
+                    return " ".join(str(chunk) for chunk in content)
+                if content is not None:
+                    return str(content)
+            if hasattr(last, "content"):
+                return str(getattr(last, "content"))
+        if "response" in result:
+            return str(result["response"])
+    if hasattr(result, "content"):
+        return str(getattr(result, "content"))
+    return str(result)
 
 
 def _emit_response(response: WorkspaceResponse, json_output: bool) -> None:

@@ -1,18 +1,22 @@
 # TianGong AI Workspace — Agent Guide
 
 ## Overview
-- Unified developer workspace for coordinating Codex, Gemini, Claude Code, and document-centric AI workflows.
+- Unified developer workspace for coordinating Codex, Gemini, Claude Code, and both document-centric & autonomous DeepAgents workflows.
 - Python 3.12+ project managed完全 by `uv`; avoid `pip`, `poetry`, `conda`.
-- Primary entry point: `uv run tiangong-workspace`, featuring LangChain/LangGraph document agents and Tavily MCP research.
+- Primary entry point: `uv run tiangong-workspace`, featuring LangChain/LangGraph document agents, DeepAgents planning, and Tavily MCP research.
 
 ## Repository Layout
-- `src/tiangong_ai_workspace/cli.py`: Typer CLI with `docs`, `research`, and `mcp` subcommands plus structured JSON output support.
-- `src/tiangong_ai_workspace/agents/`: LangChain/LangGraph document workflows (`run_document_workflow`, templates for reports, plans, patent, proposals).
+- `src/tiangong_ai_workspace/cli.py`: Typer CLI with `docs`, `agents`, `research`, and `mcp` subcommands plus structured JSON output support.
+- `src/tiangong_ai_workspace/agents/`:
+  - `workflows.py`: LangChain/LangGraph document workflows (reports, plans, patent, proposals).
+  - `deep_agent.py`: Workspace DeepAgents factory combining shell, Python, Tavily, and documentation specialists.
+  - `tools.py`: LangChain Tool wrappers for shell/Python execution, Tavily search, and document generation.
 - `src/tiangong_ai_workspace/tooling/`: Utilities shared by agents.
   - `responses.py`: `WorkspaceResponse` envelope for deterministic outputs.
   - `registry.py`: Tool metadata registry surfaced via `tiangong-workspace tools --catalog`.
   - `llm.py`: OpenAI model factory (selects chat vs deep research models).
   - `tavily.py`: Tavily MCP client with retry + structured payloads.
+  - `executors.py`: Shell/Python execution helpers returning structured stdout/stderr for agent consumption.
 - `src/tiangong_ai_workspace/templates/`: Markdown scaffolds referenced by workflows.
 - `.sercrets/secrets.toml`: Local-only secrets (copy from `.sercrets/secrets.example.toml`).
 
@@ -40,6 +44,8 @@ All three must pass before sharing updates.
 - `uv run tiangong-workspace tools --catalog` — list internal agent workflows from the registry.
 - `uv run tiangong-workspace docs list` — supported document workflows.
 - `uv run tiangong-workspace docs run <workflow> --topic ...` — generate drafts (supports `--json`, `--skip-research`, `--purpose`, etc.).
+- `uv run tiangong-workspace agents list` — view DeepAgents + runtime executors available to agents.
+- `uv run tiangong-workspace agents run "<task>" [--no-shell/--no-python/--no-tavily/--no-document]` — run the workspace DeepAgent.
 - `uv run tiangong-workspace research "<query>"` — invoke Tavily MCP search (also supports `--json`).
 - `uv run tiangong-workspace mcp services|tools|invoke` — inspect and call configured MCP services.
 
@@ -62,4 +68,4 @@ Use `--json` for machine-readable responses suitable for chaining agents.
 - Tavily wrapper retries transient failures; propagate explicit `TavilySearchError` for agents to handle.
 - Register new workflows via `tooling.registry.register_tool` for discoverability.
 - Keep logs redaction-aware if adding persistence; avoid leaking API keys.
-
+- DeepAgents factory accepts `model`, `include_*` flags, and additional tools/subagents. Reuse `tooling.executors` or extend `agents/tools.py` when exposing new capabilities to autonomous agents.
