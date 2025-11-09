@@ -18,12 +18,18 @@ from typing import Any, Iterable, Mapping, Optional, Tuple
 import typer
 
 from . import __version__
+from .agents import DocumentWorkflowConfig, DocumentWorkflowType, run_document_workflow
 from .mcp_client import MCPToolClient
 from .secrets import MCPServerSecrets, discover_secrets_path, load_secrets
+from .tooling import WorkspaceResponse, list_registered_tools
+from .tooling.llm import ModelPurpose
+from .tooling.tavily import TavilySearchClient, TavilySearchError
 
 app = typer.Typer(help="Tiangong AI Workspace CLI for managing local AI tooling.")
 mcp_app = typer.Typer(help="Interact with Model Context Protocol services configured for this workspace.")
 app.add_typer(mcp_app, name="mcp")
+docs_app = typer.Typer(help="Document-generation workflows driven by LangChain/LangGraph.")
+app.add_typer(docs_app, name="docs")
 
 # (command, label) pairs for CLI integrations that the workspace cares about.
 REGISTERED_TOOLS: Iterable[Tuple[str, str]] = (
@@ -31,6 +37,13 @@ REGISTERED_TOOLS: Iterable[Tuple[str, str]] = (
     ("gcloud", "Google Cloud CLI (Gemini)"),
     ("claude", "Claude Code CLI"),
 )
+
+WORKFLOW_SUMMARIES = {
+    DocumentWorkflowType.REPORT: "Business and technical reports with clear recommendations.",
+    DocumentWorkflowType.PATENT_DISCLOSURE: "Patent disclosure drafts capturing inventive details.",
+    DocumentWorkflowType.PLAN: "Execution or project plans with milestones and risks.",
+    DocumentWorkflowType.PROJECT_PROPOSAL: "Project proposals optimised for stakeholder buy-in.",
+}
 
 
 def _get_version(command: str) -> str | None:
@@ -66,11 +79,56 @@ def info() -> None:
 
 
 @app.command("tools")
-def list_tools() -> None:
-    """List the external AI tooling CLIs tracked by the workspace."""
-    typer.echo("Configured AI tooling commands:")
+def list_tools(
+    catalog: bool = typer.Option(
+        False,
+        "--catalog",
+        help="Show the internal agent tool registry instead of local CLI commands.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """List the external AI tooling CLIs tracked by the workspace or the agent catalog."""
+
+    if catalog:
+        registry = list_registered_tools()
+        items = [
+            {
+                "name": descriptor.name,
+                "description": descriptor.description,
+                "category": descriptor.category,
+                "entrypoint": descriptor.entrypoint,
+                "tags": list(descriptor.tags),
+            }
+            for descriptor in registry.values()
+        ]
+        response = WorkspaceResponse.ok(
+            payload={"tools": items},
+            message="Workspace agent tool registry.",
+            source="catalog",
+        )
+        _emit_response(response, json_output)
+        if not json_output:
+            typer.echo("")
+            for item in items:
+                typer.echo(f"- {item['name']}: {item['description']} [{item['category']}]")
+        return
+
+    cli_tools = []
     for command, label in REGISTERED_TOOLS:
-        typer.echo(f"- {label}: `{command}`")
+        location = shutil.which(command)
+        version = _get_version(command) if location else None
+        cli_tools.append({"command": command, "label": label, "installed": bool(location), "location": location, "version": version})
+
+    if json_output:
+        response = WorkspaceResponse.ok(payload={"cli_tools": cli_tools}, message="CLI tooling status.", source="local")
+        _emit_response(response, json_output=True)
+        return
+
+    typer.echo("Configured AI tooling commands:")
+    for info in cli_tools:
+        status = "[OK]" if info["installed"] else "[MISSING]"
+        detail = info["version"] or "not installed"
+        typer.echo(f"- {info['label']}: `{info['command']}` {status} ({detail})")
     typer.echo("")
     typer.echo("Edit src/tiangong_ai_workspace/cli.py to customize this list.")
 
@@ -106,6 +164,115 @@ def check() -> None:
 
     typer.echo("")
     typer.echo("Update src/tiangong_ai_workspace/cli.py to adjust tool detection rules.")
+
+
+@docs_app.command("list")
+def docs_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """List supported document-generation workflows."""
+
+    items = []
+    for workflow in DocumentWorkflowType:
+        items.append(
+            {
+                "value": workflow.value,
+                "tone": workflow.prompt_tone,
+                "description": WORKFLOW_SUMMARIES.get(workflow, ""),
+                "template": workflow.template_name,
+            }
+        )
+
+    response = WorkspaceResponse.ok(payload={"workflows": items}, message="Available document workflows.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo("Run `uv run tiangong-workspace docs run --help` to generate a document.")
+
+
+@docs_app.command("run")
+def docs_run(
+    workflow: DocumentWorkflowType = typer.Argument(
+        ...,
+        case_sensitive=False,
+        help="Document workflow key (report, patent_disclosure, plan, project_proposal).",
+    ),
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic or theme for the document."),
+    instructions: Optional[str] = typer.Option(
+        None,
+        "--instructions",
+        "-i",
+        help="Additional instructions or constraints to pass to the workflow.",
+    ),
+    audience: Optional[str] = typer.Option(
+        None,
+        "--audience",
+        "-a",
+        help="Intended audience description.",
+    ),
+    language: str = typer.Option(
+        "zh",
+        "--language",
+        "-l",
+        help="Output language (default: zh).",
+    ),
+    skip_research: bool = typer.Option(
+        False,
+        "--skip-research",
+        help="Disable Tavily web search integration for this run.",
+    ),
+    search_query: Optional[str] = typer.Option(
+        None,
+        "--search-query",
+        help="Override the default Tavily query (defaults to the topic).",
+    ),
+    temperature: float = typer.Option(
+        0.4,
+        "--temperature",
+        help="Sampling temperature for the language model.",
+    ),
+    purpose: str = typer.Option(
+        "general",
+        "--purpose",
+        help="Model purpose hint (general, deep_research, creative).",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """Run a document-generation workflow."""
+
+    normalised_purpose = purpose.lower().strip()
+    if normalised_purpose not in {"general", "deep_research", "creative"}:
+        typer.secho("Invalid --purpose value. Choose from general, deep_research, creative.", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+    model_purpose: ModelPurpose = normalised_purpose  # type: ignore[assignment]
+
+    config = DocumentWorkflowConfig(
+        workflow=workflow,
+        topic=topic,
+        instructions=instructions,
+        audience=audience,
+        language=language,
+        include_research=not skip_research,
+        search_query=search_query,
+        temperature=temperature,
+        model_purpose=model_purpose,
+    )
+
+    try:
+        result = run_document_workflow(config)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        response = WorkspaceResponse.error("Document workflow failed.", errors=(str(exc),))
+        _emit_response(response, json_output)
+        raise typer.Exit(code=1) from exc
+
+    response = WorkspaceResponse.ok(payload=result, message="Document workflow completed.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo("# --- Draft Output ---")
+        typer.echo(result.get("draft", ""))
 
 
 # --------------------------------------------------------------------------- MCP
@@ -211,6 +378,45 @@ def invoke_mcp_tool(
         typer.echo("\nAttachments:")
         for attachment in attachments:
             typer.echo(_format_result(attachment))
+
+
+def _emit_response(response: WorkspaceResponse, json_output: bool) -> None:
+    if json_output:
+        typer.echo(response.to_json())
+        return
+
+    typer.echo(response.message)
+    if response.status != "success" and response.errors:
+        typer.echo("")
+        typer.echo("Errors:")
+        for err in response.errors:
+            typer.echo(f"- {err}")
+
+
+@app.command()
+def research(
+    query: str = typer.Argument(..., help="Query string to send to the Tavily MCP service."),
+    service_name: str = typer.Option("tavily", "--service", help="MCP service name defined in the secrets file."),
+    tool_name: str = typer.Option("search", "--tool-name", help="Tavily tool name to invoke."),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """Run a standalone research query using the Tavily MCP integration."""
+
+    try:
+        client = TavilySearchClient(service_name=service_name, tool_name=tool_name)
+        result = client.search(query)
+    except TavilySearchError as exc:
+        response = WorkspaceResponse.error("Research query failed.", errors=(str(exc),))
+        _emit_response(response, json_output)
+        raise typer.Exit(code=1)
+
+    response = WorkspaceResponse.ok(payload=result, message="Research query completed.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo("Top-level research result:")
+        typer.echo(_format_result(result.get("result")))
 
 
 def _format_result(value: Any) -> str:

@@ -1,27 +1,30 @@
 # TianGong AI Workspace — Agent Guide
 
 ## Overview
-- Unified developer workspace that coordinates Codex, Gemini, Claude Code, and other AI tooling.
-- Python 3.12+ project managed entirely with `uv`; do **not** rely on `pip`, `poetry`, or `conda`.
-- Primary entry point is the Typer-based CLI `tiangong-workspace`, exposed via `uv run`.
+- Unified developer workspace for coordinating Codex, Gemini, Claude Code, and document-centric AI workflows.
+- Python 3.12+ project managed完全 by `uv`; avoid `pip`, `poetry`, `conda`.
+- Primary entry point: `uv run tiangong-workspace`, featuring LangChain/LangGraph document agents and Tavily MCP research.
 
 ## Repository Layout
-- `src/tiangong_ai_workspace/`: Workspace Python package and CLI logic.
-  - `cli.py`: User-facing commands plus a nested `mcp` subcommand for interacting with remote MCP services.
-  - `mcp_client.py`: Synchronous wrapper around the official MCP Python SDK.
-  - `secrets.py`: Loads `.sercrets/secrets.toml` for OpenAI keys and `*_mcp` service configs.
-- `.sercrets/`: Local-only secrets directory (not for version control).
-- Installation scripts (`install_ubuntu.sh`, `install_macos.sh`, `install_windows.ps1`) bootstrap Python, uv, Node.js, and optional tooling.
+- `src/tiangong_ai_workspace/cli.py`: Typer CLI with `docs`, `research`, and `mcp` subcommands plus structured JSON output support.
+- `src/tiangong_ai_workspace/agents/`: LangChain/LangGraph document workflows (`run_document_workflow`, templates for reports, plans, patent, proposals).
+- `src/tiangong_ai_workspace/tooling/`: Utilities shared by agents.
+  - `responses.py`: `WorkspaceResponse` envelope for deterministic outputs.
+  - `registry.py`: Tool metadata registry surfaced via `tiangong-workspace tools --catalog`.
+  - `llm.py`: OpenAI model factory (selects chat vs deep research models).
+  - `tavily.py`: Tavily MCP client with retry + structured payloads.
+- `src/tiangong_ai_workspace/templates/`: Markdown scaffolds referenced by workflows.
+- `.sercrets/secrets.toml`: Local-only secrets (copy from `.sercrets/secrets.example.toml`).
 
 ## Tooling Workflow
-Run everything through `uv` to ensure the correct environment:
+Run everything through `uv`:
 
 ```bash
-uv sync                  # one-time setup or when dependencies change
+uv sync
 uv run tiangong-workspace --help
 ```
 
-After **every** code change, run the following **in order** and ensure they pass:
+After **every** code change run, in order:
 
 ```bash
 uv run black .
@@ -29,23 +32,34 @@ uv run ruff check
 uv run pytest
 ```
 
-These commands must complete successfully before sharing updates or opening pull requests.
+All three must pass before sharing updates.
 
-## MCP & Secrets
-- Populate `.sercrets/secrets.toml` using `.sercrets/secrets.example.toml` as a template.
-- Keep secrets out of version control; the example file documents expected fields.
-- Use `uv run tiangong-workspace mcp services|tools|invoke` to discover and call configured MCP tools.
+## CLI Quick Reference
+- `uv run tiangong-workspace info` — workspace summary.
+- `uv run tiangong-workspace check` — validate Python/uv/Node + registered CLIs.
+- `uv run tiangong-workspace tools --catalog` — list internal agent workflows from the registry.
+- `uv run tiangong-workspace docs list` — supported document workflows.
+- `uv run tiangong-workspace docs run <workflow> --topic ...` — generate drafts (supports `--json`, `--skip-research`, `--purpose`, etc.).
+- `uv run tiangong-workspace research "<query>"` — invoke Tavily MCP search (also supports `--json`).
+- `uv run tiangong-workspace mcp services|tools|invoke` — inspect and call configured MCP services.
+
+Use `--json` for machine-readable responses suitable for chaining agents.
+
+## Secrets
+- Populate `.sercrets/secrets.toml` using the example file.
+- Required: `openai.api_key`. Optional: `model`, `chat_model`, `deep_research_model`.
+- Tavily section needs `service_name`, `url`, and `api_key` (`Authorization: Bearer` header).
+- Secrets stay local; never commit `.sercrets/`.
 
 ## Maintenance Rules
-- Whenever you modify program code, synchronize documentation: update both `AGENTS.md` *and* `README.md` so they reflect the latest behaviour, commands, and workflows.
-- Respect existing dependency declarations in `pyproject.toml`; use `uv add/remove` for changes.
+- Modify program code → update both `AGENTS.md` and `README.md`.
+- Respect dependency declarations in `pyproject.toml`; use `uv add/remove`.
 - Prefer ASCII in source files unless the file already uses other encodings.
+- Structured outputs (`WorkspaceResponse`) keep agent integrations predictable—adhere to them when adding new commands.
 
-## Helpful Commands
-```bash
-uv run tiangong-workspace info      # summarize environment
-uv run tiangong-workspace check     # validate Python/uv/Node + external CLIs
-uv run tiangong-workspace mcp tools <service>   # enumerate remote MCP tools
-```
+## Helpful Notes
+- To stub LLM calls in tests, inject a custom `Runnable` when calling `run_document_workflow`.
+- Tavily wrapper retries transient failures; propagate explicit `TavilySearchError` for agents to handle.
+- Register new workflows via `tooling.registry.register_tool` for discoverability.
+- Keep logs redaction-aware if adding persistence; avoid leaking API keys.
 
-This guide is optimized for automated agents; keep it current whenever the project evolves.
