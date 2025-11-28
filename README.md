@@ -12,7 +12,7 @@
 - `src/tiangong_ai_workspace/`：工作区 Python 包与 CLI 入口。
   - `cli.py`：Typer CLI，包含 `docs`、`agents`、`research` 与 `mcp` 子命令。
   - `agents/`：LangGraph 文档工作流 (`workflows.py`)、LangGraph/DeepAgents 双引擎自主智能体 (`deep_agent.py`)、具备 Pydantic 入参与输出校验的 LangChain Tool 封装 (`tools.py`)。
-  - `tooling/`：响应封装、工作区配置加载 (`config.py`)、工具注册表、模型路由器 (`llm.py`)、统一 Tool Schema (`tool_schemas.py`)、Tavily MCP 搜索客户端、Neo4j 图数据库客户端 (`neo4j.py`) 以及带审计的 Shell/Python 执行器。
+  - `tooling/`：响应封装、工作区配置加载 (`config.py`)、工具注册表、模型路由器 (`llm.py`)、统一 Tool Schema (`tool_schemas.py`)、Tavily MCP 搜索客户端、Dify 知识库客户端 (`dify.py`)、Neo4j 图数据库客户端 (`neo4j.py`) 以及带审计的 Shell/Python 执行器。
   - `templates/`：不同文档类型的结构提示。
   - `mcp_client.py`：同步封装的 MCP 客户端。
   - `secrets.py`：凭证加载逻辑。
@@ -60,6 +60,7 @@ uv run tiangong-workspace check         # 检查 Python、uv、Node.js 以及外
 uv run tiangong-workspace tools         # 查看已配置的外部 CLI 列表
 uv run tiangong-workspace tools --catalog   # 查看内部工作流与工具注册表
 uv run tiangong-workspace agents list       # 查看自主智能体与运行时代码执行器
+uv run tiangong-workspace knowledge retrieve "查询关键词"  # 直接检索 Dify 知识库
 ```
 
 所有支持的命令都提供 `--json` 选项，可输出结构化响应，方便被其他智能体消费。
@@ -80,10 +81,11 @@ uv run tiangong-workspace agents run "统计 data.csv 中的指标并绘图" --n
 - Shell 执行器：运行命令行工具、脚本、`uv`/`git` 等指令，返回结构化 stdout/stderr。
 - Python 执行器：在共享解释器中运行脚本，可直接使用 `pandas`、`matplotlib`、`seaborn` 等依赖。
 - Tavily 搜索：通过 MCP 获取实时互联网情报。
+- Dify 知识库：在本地 HTTP 直连指定 Dify 数据集以获取企业知识，无需 MCP。
 - LangGraph 文档工作流：生成报告、计划书、专利交底书、项目申报书。
 - Neo4j 图数据库：通过 `neo4j` 官方驱动执行 Cypher，并支持 create/read/update/delete 全流程操作。
 
-可使用 `--no-shell`、`--no-python`、`--no-tavily`、`--no-document` 分别关闭对应工具；`--engine langgraph|deepagents` 切换运行后端；`--system-prompt` 和 `--model` 可自定义智能体设定。
+可使用 `--no-shell`、`--no-python`、`--no-tavily`、`--no-dify`、`--no-document` 分别关闭对应工具；`--engine langgraph|deepagents` 切换运行后端；`--system-prompt` 和 `--model` 可自定义智能体设定。
 
 ## 文档工作流
 `docs` 子命令调用 LangGraph 工作流（检索→大纲→草稿），支持报告、计划书、专利交底书、项目申报书等：
@@ -115,6 +117,16 @@ uv run tiangong-workspace research "AI 写作辅助工具对比" --json
 
 如需使用自定义 MCP 服务名称或工具名称，可分别通过 `--service` 与 `--tool-name` 覆盖。
 
+## 知识库检索
+`knowledge` 子命令直接通过 HTTP 访问 Dify 知识库，无需再配置 `dify_knowledge_base_mcp`：
+
+```bash
+uv run tiangong-workspace knowledge retrieve "大数据治理" --top-k 8
+uv run tiangong-workspace knowledge retrieve "新能源" --options '{"retrieval_model": {"search_method": "hybrid_search"}}'
+```
+
+命令会输出结构化 `WorkspaceResponse`，若搭配 `--json` 可方便地串接其他 Agent。`--options` 允许透传 `score_threshold`、`metadata_filtering_conditions`、`reranking_mode` 等 Dify API 参数。
+
 ## Secrets 配置
 1. 复制 `.sercrets/secrets.example.toml` 为 `.sercrets/secrets.toml`（保持文件不入库）。
 2. 填写 `openai.api_key`，可选配置 `model`、`chat_model`、`deep_research_model`。
@@ -139,6 +151,17 @@ username = "neo4j"
 password = "<YOUR_NEO4J_PASSWORD>"
 database = "neo4j"
 ```
+
+5. 若需直接访问 Dify 知识库，请新增以下配置（示例值可替换为实际实例）：
+
+```toml
+[dify_knowledge_base]
+api_base_url = "https://thuenv.tiangong.world:7001/v1"
+api_key = "dataset-XXXX"
+dataset_id = "53a90891-853c-4bf0-bf39-96dd84e11501"
+```
+
+配置完成后即可使用 `knowledge retrieve` 命令或 Dify LangChain Tool，无需再维护 `dify_knowledge_base_mcp` 段落。
 
 ## 自定义集成
 1. 在 `pyproject.toml` 的 `[tool.tiangong.workspace.cli_tools]` 中新增/修改 CLI 监测项，即可立刻反映到 `tiangong-workspace tools`。

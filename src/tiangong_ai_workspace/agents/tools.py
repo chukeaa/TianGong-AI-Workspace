@@ -8,10 +8,13 @@ from typing import Any, Mapping, Optional
 
 from langchain_core.tools import tool
 
+from ..tooling.dify import DifyKnowledgeBaseClient, DifyKnowledgeBaseError
 from ..tooling.executors import PythonExecutor, ShellExecutor
 from ..tooling.neo4j import Neo4jClient, Neo4jToolError
 from ..tooling.tavily import TavilySearchClient, TavilySearchError
 from ..tooling.tool_schemas import (
+    DifyKnowledgeBaseInput,
+    DifyKnowledgeBaseOutput,
     DocumentToolInput,
     DocumentToolOutput,
     Neo4jCommandInput,
@@ -27,6 +30,7 @@ from .workflows import DocumentWorkflowConfig, DocumentWorkflowType, run_documen
 
 __all__ = [
     "create_document_tool",
+    "create_dify_knowledge_tool",
     "create_neo4j_tool",
     "create_python_tool",
     "create_shell_tool",
@@ -78,6 +82,29 @@ def create_tavily_tool(client: Optional[TavilySearchClient] = None, *, name: str
         return payload.model_dump()
 
     return tavily_search
+
+
+def create_dify_knowledge_tool(client: Optional[DifyKnowledgeBaseClient] = None, *, name: str = "dify_knowledge") -> Any:
+    kb_client = client or DifyKnowledgeBaseClient()
+
+    @tool(name, args_schema=DifyKnowledgeBaseInput)
+    def dify_knowledge(
+        query: str,
+        top_k: int | None = None,
+        options: Optional[Mapping[str, Any]] = None,
+    ) -> Mapping[str, Any]:
+        """Retrieve chunks from the configured Dify knowledge base."""
+
+        try:
+            result = kb_client.retrieve(query, top_k=top_k, options=dict(options or {}))
+        except DifyKnowledgeBaseError as exc:
+            payload = DifyKnowledgeBaseOutput(status="error", message=str(exc))
+            return payload.model_dump()
+
+        payload = DifyKnowledgeBaseOutput(status="success", data=result)
+        return payload.model_dump()
+
+    return dify_knowledge
 
 
 def create_neo4j_tool(client: Optional[Neo4jClient] = None, *, name: str = "run_neo4j_query") -> Any:

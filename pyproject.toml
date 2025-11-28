@@ -99,6 +99,13 @@ entrypoint = "tiangong_ai_workspace.tooling.tavily.TavilySearchClient.search"
 tags = ["research", "search"]
 
 [[tool.tiangong.workspace.tool_registry]]
+name = "knowledge.dify"
+description = "Retrieve chunks from the configured Dify knowledge base via HTTP."
+category = "integration"
+entrypoint = "tiangong_ai_workspace.tooling.dify.DifyKnowledgeBaseClient.retrieve"
+tags = ["knowledge", "dify"]
+
+[[tool.tiangong.workspace.tool_registry]]
 name = "database.neo4j"
 description = "Execute Cypher queries against the configured Neo4j graph database."
 category = "integration"

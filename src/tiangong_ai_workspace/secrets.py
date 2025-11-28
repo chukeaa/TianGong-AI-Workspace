@@ -73,12 +73,22 @@ class Neo4jSecrets:
 
 
 @dataclass(slots=True)
+class DifyKnowledgeBaseSecrets:
+    """Secrets required to call the Dify knowledge base HTTP API."""
+
+    api_base_url: str
+    api_key: str
+    dataset_id: str
+
+
+@dataclass(slots=True)
 class Secrets:
     """Container bundling all supported secret entries."""
 
     openai: Optional[OpenAISecrets]
     mcp_servers: Mapping[str, MCPServerSecrets]
     neo4j: Optional[Neo4jSecrets] = None
+    dify_knowledge_base: Optional[DifyKnowledgeBaseSecrets] = None
 
 
 def discover_secrets_path() -> Path:
@@ -146,7 +156,25 @@ def load_secrets(path: Optional[Path] = None) -> Secrets:
                 database=_get_opt_str(neo4j_data, "database"),
             )
 
-    return Secrets(openai=openai_secrets, mcp_servers=dict(mcp_entries), neo4j=neo4j_secrets)
+    dify_data = data.get("dify_knowledge_base")
+    dify_secrets = None
+    if isinstance(dify_data, Mapping):
+        api_base_url = _get_opt_str(dify_data, "api_base_url")
+        api_key = _get_opt_str(dify_data, "api_key")
+        dataset_id = _get_opt_str(dify_data, "dataset_id")
+        if api_base_url and api_key and dataset_id:
+            dify_secrets = DifyKnowledgeBaseSecrets(
+                api_base_url=api_base_url.rstrip("/"),
+                api_key=api_key,
+                dataset_id=dataset_id,
+            )
+
+    return Secrets(
+        openai=openai_secrets,
+        mcp_servers=dict(mcp_entries),
+        neo4j=neo4j_secrets,
+        dify_knowledge_base=dify_secrets,
+    )
 
 
 def _get_opt_str(container: Mapping[str, Any], key: str) -> Optional[str]:
@@ -182,6 +210,7 @@ __all__ = [
     "MCPServerSecrets",
     "OpenAISecrets",
     "Neo4jSecrets",
+    "DifyKnowledgeBaseSecrets",
     "Secrets",
     "discover_secrets_path",
     "load_secrets",

@@ -25,6 +25,7 @@ from .mcp_client import MCPToolClient
 from .secrets import MCPServerSecrets, discover_secrets_path, load_secrets
 from .tooling import WorkspaceResponse, list_registered_tools
 from .tooling.config import CLIToolConfig, load_workspace_config
+from .tooling.dify import DifyKnowledgeBaseClient, DifyKnowledgeBaseError
 from .tooling.llm import ModelPurpose
 from .tooling.tavily import TavilySearchClient, TavilySearchError
 
@@ -35,6 +36,8 @@ docs_app = typer.Typer(help="Document-generation workflows driven by LangChain/L
 app.add_typer(docs_app, name="docs")
 agents_app = typer.Typer(help="General-purpose workspace agent workflows.")
 app.add_typer(agents_app, name="agents")
+knowledge_app = typer.Typer(help="Knowledge base utilities such as Dify dataset retrieval.")
+app.add_typer(knowledge_app, name="knowledge")
 
 WORKFLOW_SUMMARIES = {
     DocumentWorkflowType.REPORT: "Business and technical reports with clear recommendations.",
@@ -239,6 +242,7 @@ def agents_run(
     no_shell: bool = typer.Option(False, "--no-shell", help="Disable shell command execution."),
     no_python: bool = typer.Option(False, "--no-python", help="Disable Python execution tool."),
     no_tavily: bool = typer.Option(False, "--no-tavily", help="Disable Tavily web search tool."),
+    no_dify: bool = typer.Option(False, "--no-dify", help="Disable Dify knowledge base tool."),
     no_document: bool = typer.Option(False, "--no-document", help="Disable document generation tool."),
     engine: str = typer.Option(
         "langgraph",
@@ -255,6 +259,7 @@ def agents_run(
             include_shell=not no_shell,
             include_python=not no_python,
             include_tavily=not no_tavily,
+            include_dify_knowledge=not no_dify,
             include_document_agent=not no_document,
             system_prompt=system_prompt,
             engine=engine,
@@ -526,6 +531,53 @@ def research(
     if not json_output:
         typer.echo("")
         typer.echo("Top-level research result:")
+        typer.echo(_format_result(result.get("result")))
+
+
+@knowledge_app.command("retrieve")
+def knowledge_retrieve(
+    query: str = typer.Argument(..., help="Query string to search within the configured Dify knowledge base."),
+    top_k: Optional[int] = typer.Option(
+        None,
+        "--top-k",
+        min=1,
+        help="Override the number of chunks returned (defaults to server setting).",
+    ),
+    options: Optional[str] = typer.Option(
+        None,
+        "--options",
+        help="JSON object with additional Dify retrieval parameters (e.g. filters, reranking).",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """Call the Dify knowledge base directly without using MCP."""
+
+    extra_options: Mapping[str, Any] | None = None
+    if options:
+        try:
+            parsed = json.loads(options)
+        except json.JSONDecodeError as exc:
+            typer.secho(f"Invalid JSON for --options: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(code=10) from exc
+        if not isinstance(parsed, Mapping):
+            typer.secho("--options must decode to a JSON object.", fg=typer.colors.RED)
+            raise typer.Exit(code=11)
+        extra_options = dict(parsed)
+
+    try:
+        client = DifyKnowledgeBaseClient()
+        result = client.retrieve(query, top_k=top_k, options=extra_options)
+    except DifyKnowledgeBaseError as exc:
+        response = WorkspaceResponse.error("Knowledge base retrieval failed.", errors=(str(exc),))
+        _emit_response(response, json_output)
+        raise typer.Exit(code=12) from exc
+
+    response = WorkspaceResponse.ok(payload=result, message="Knowledge base retrieval completed.")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo("Retrieved chunks:")
         typer.echo(_format_result(result.get("result")))
 
 

@@ -21,10 +21,18 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 
+from ..tooling.dify import DifyKnowledgeBaseError
 from ..tooling.llm import ModelRouter
 from ..tooling.neo4j import Neo4jToolError
 from ..tooling.tavily import TavilySearchClient, TavilySearchError
-from .tools import create_document_tool, create_neo4j_tool, create_python_tool, create_shell_tool, create_tavily_tool
+from .tools import (
+    create_dify_knowledge_tool,
+    create_document_tool,
+    create_neo4j_tool,
+    create_python_tool,
+    create_shell_tool,
+    create_tavily_tool,
+)
 
 __all__ = ["build_workspace_deep_agent", "WorkspaceAgentConfig"]
 
@@ -49,7 +57,7 @@ class WorkspaceAgentConfig:
     system_prompt: str | None = None
 
 
-_TOOL_SENTINEL = "Available tools: shell, python, tavily, document, neo4j."
+_TOOL_SENTINEL = "Available tools: shell, python, tavily, document, neo4j, knowledge."
 
 DEFAULT_SYSTEM_PROMPT = f"""You are the TianGong Workspace orchestrator.
 - Plan multi-step solutions and choose the best tool for each step.
@@ -68,6 +76,7 @@ def build_workspace_deep_agent(
     include_shell: bool = True,
     include_python: bool = True,
     include_tavily: bool = True,
+    include_dify_knowledge: bool = True,
     include_document_agent: bool = True,
     include_neo4j: bool = True,
     system_prompt: str | None = None,
@@ -100,6 +109,7 @@ def build_workspace_deep_agent(
         include_python=include_python,
         include_tavily=include_tavily,
         include_document_agent=include_document_agent,
+        include_dify_knowledge=include_dify_knowledge,
         include_neo4j=include_neo4j,
     )
 
@@ -123,6 +133,7 @@ def _initialise_tools(
     include_python: bool,
     include_tavily: bool,
     include_document_agent: bool,
+    include_dify_knowledge: bool,
     include_neo4j: bool,
 ) -> Mapping[str, Any]:
     tool_mapping: MutableMapping[str, Any] = {}
@@ -137,6 +148,11 @@ def _initialise_tools(
             tool_mapping["tavily"] = create_tavily_tool()
         except TavilySearchError:
             # Skip Tavily if secrets are missing; agent can still operate offline.
+            pass
+    if include_dify_knowledge:
+        try:
+            tool_mapping["knowledge"] = create_dify_knowledge_tool()
+        except DifyKnowledgeBaseError:
             pass
     if include_document_agent:
         tool_mapping["document"] = create_document_tool()

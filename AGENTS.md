@@ -18,6 +18,7 @@
   - `tool_schemas.py`: Pydantic schemas exported to LangChain tools and registry metadata.
   - `llm.py`: Provider-agnostic model router (OpenAI provider registered by default).
   - `tavily.py`: Tavily MCP client with retry + structured payloads.
+  - `dify.py`: Direct HTTP client for the Dify knowledge base (no MCP required).
   - `neo4j.py`: Neo4j driver wrapper used by CRUD tools and registry metadata.
   - `executors.py`: Shell/Python execution helpers with timeouts, allow-lists, and structured telemetry for agent consumption.
 - `src/tiangong_ai_workspace/templates/`: Markdown scaffolds referenced by workflows.
@@ -53,8 +54,9 @@ All three must pass before sharing updates.
 - `uv run tiangong-workspace docs list` — supported document workflows.
 - `uv run tiangong-workspace docs run <workflow> --topic ...` — generate drafts (supports `--json`, `--skip-research`, `--purpose`, etc.).
 - `uv run tiangong-workspace agents list` — view autonomous agents + runtime executors available to agents.
-- `uv run tiangong-workspace agents run "<task>" [--no-shell/--no-python/--no-tavily/--no-document --engine langgraph|deepagents]` — run the workspace DeepAgent with the preferred backend.
+- `uv run tiangong-workspace agents run "<task>" [--no-shell/--no-python/--no-tavily/--no-dify/--no-document --engine langgraph|deepagents]` — run the workspace DeepAgent with the preferred backend.
 - `uv run tiangong-workspace research "<query>"` — invoke Tavily MCP search (also supports `--json`).
+- `uv run tiangong-workspace knowledge retrieve "<query>"` — call the Dify knowledge base API without MCP.
 - `uv run tiangong-workspace mcp services|tools|invoke` — inspect and call configured MCP services.
 
 Use `--json` for machine-readable responses suitable for chaining agents.
@@ -64,6 +66,7 @@ Use `--json` for machine-readable responses suitable for chaining agents.
 - Required: `openai.api_key`. Optional: `model`, `chat_model`, `deep_research_model`.
 - Tavily section needs `service_name`, `url`, and `api_key` (`Authorization: Bearer` header).
 - Neo4j section (optional) defines `uri`, `username`, `password`, and `database`; when absent the Neo4j LangChain tool is automatically disabled.
+- `dify_knowledge_base` defines `api_base_url`, `api_key`, and `dataset_id`; this powers the `knowledge retrieve` CLI and the LangChain Dify tool (no MCP block required).
 - Secrets stay local; never commit `.sercrets/`.
 
 ## Maintenance Rules
@@ -79,6 +82,7 @@ Use `--json` for machine-readable responses suitable for chaining agents.
 - Shell/Python executors enforce configurable timeouts and command allow-lists—reuse them instead of invoking `subprocess` or `exec` directly.
 - LangChain tools should depend on the schemas in `tooling.tool_schemas` so registry metadata stays consistent.
 - Neo4j automation lives in `tooling.neo4j`; reuse `Neo4jClient` + `Neo4jCommand*` schemas to expose graph operations or add migrations/tests.
+- Dify knowledge base access lives in `tooling.dify` and `agents/tools.create_dify_knowledge_tool`; reuse them to expose retrieval without MCP transport.
 - Choose the DeepAgents backend via `--engine deepagents` when you need its filesystem/todo middleware; ensure the supplied LLM implements `BaseChatModel`.
 - Keep logs redaction-aware if adding persistence; avoid leaking API keys.
 - Workspace agent factory accepts `model`, `include_*` flags, and additional tools/subagents. Reuse `tooling.executors` or extend `agents/tools.py` when exposing new capabilities to autonomous agents.

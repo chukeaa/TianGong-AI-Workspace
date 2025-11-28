@@ -10,8 +10,9 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 
 from tiangong_ai_workspace.agents.deep_agent import build_workspace_deep_agent
-from tiangong_ai_workspace.secrets import MCPServerSecrets, Neo4jSecrets, Secrets
+from tiangong_ai_workspace.secrets import DifyKnowledgeBaseSecrets, MCPServerSecrets, Neo4jSecrets, Secrets
 from tiangong_ai_workspace.tooling import PythonExecutor, ShellExecutor, WorkspaceResponse, list_registered_tools
+from tiangong_ai_workspace.tooling.dify import DifyKnowledgeBaseClient, DifyKnowledgeBaseError
 from tiangong_ai_workspace.tooling.neo4j import Neo4jClient, Neo4jToolError
 from tiangong_ai_workspace.tooling.tavily import TavilySearchClient, TavilySearchError
 
@@ -52,6 +53,47 @@ def test_tavily_client_custom_service_is_loaded() -> None:
     )
     client = TavilySearchClient(secrets=secrets, service_name="custom")
     assert client.service_name == "custom"
+
+
+def test_dify_client_missing_configuration_raises() -> None:
+    secrets = Secrets(openai=None, mcp_servers={})
+    with pytest.raises(DifyKnowledgeBaseError):
+        DifyKnowledgeBaseClient(secrets=secrets)
+
+
+def test_dify_client_retrieve(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = DifyKnowledgeBaseSecrets(
+        api_base_url="https://example.com/v1",
+        api_key="dataset-123",
+        dataset_id="abc",
+    )
+    secrets = Secrets(openai=None, mcp_servers={}, dify_knowledge_base=config)
+    client = DifyKnowledgeBaseClient(secrets=secrets)
+
+    captured: dict[str, Any] = {}
+
+    class _StubResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> Mapping[str, Any]:
+            return {"chunks": ["A"], "hit": True}
+
+    def fake_post(self, url: str, *, headers: Mapping[str, str], json: Mapping[str, Any]):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        return _StubResponse()
+
+    monkeypatch.setattr(DifyKnowledgeBaseClient, "_post", fake_post, raising=False)
+
+    result = client.retrieve("test", top_k=3, options={"score_threshold": 0.5})
+
+    assert result["query"] == "test"
+    assert result["result"]["hit"]
+    assert captured["json"]["top_k"] == 3
+    assert captured["json"]["score_threshold"] == 0.5
+    assert captured["headers"]["Authorization"] == "Bearer dataset-123"
 
 
 def test_shell_executor_runs_command() -> None:

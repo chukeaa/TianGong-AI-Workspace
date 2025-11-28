@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 __all__ = [
     "DocumentToolInput",
     "DocumentToolOutput",
+    "DifyKnowledgeBaseInput",
+    "DifyKnowledgeBaseOutput",
     "Neo4jCommandInput",
     "Neo4jCommandOutput",
     "PythonCommandInput",
@@ -68,6 +70,21 @@ class TavilySearchOutput(BaseModel):
     message: str | None = None
 
 
+class DifyKnowledgeBaseInput(BaseModel):
+    query: str = Field(..., description="Knowledge base query string.")
+    top_k: int | None = Field(default=None, ge=1, description="Optional limit on retrieved chunks.")
+    options: dict[str, Any] | None = Field(
+        default=None,
+        description="Additional parameters forwarded to the Dify retrieval API.",
+    )
+
+
+class DifyKnowledgeBaseOutput(BaseModel):
+    status: Literal["success", "error"]
+    data: Mapping[str, Any] | None = None
+    message: str | None = None
+
+
 class Neo4jCommandInput(BaseModel):
     operation: Literal["create", "read", "update", "delete"] = Field(
         "read",
@@ -116,6 +133,7 @@ _DESCRIPTOR_SCHEMAS: Mapping[str, _SchemaPair] = {
     "runtime.shell": _SchemaPair(ShellCommandInput, ShellCommandOutput),
     "runtime.python": _SchemaPair(PythonCommandInput, PythonCommandOutput),
     "research.tavily": _SchemaPair(TavilySearchInput, TavilySearchOutput),
+    "knowledge.dify": _SchemaPair(DifyKnowledgeBaseInput, DifyKnowledgeBaseOutput),
     "database.neo4j": _SchemaPair(Neo4jCommandInput, Neo4jCommandOutput),
     "docs.report": _SchemaPair(DocumentToolInput, DocumentToolOutput),
     "docs.patent_disclosure": _SchemaPair(DocumentToolInput, DocumentToolOutput),
