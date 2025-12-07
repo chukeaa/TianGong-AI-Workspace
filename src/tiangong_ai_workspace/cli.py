@@ -19,8 +19,6 @@ import typer
 from langchain_core.messages import HumanMessage
 
 from . import __version__
-from .agents import DocumentWorkflowConfig, DocumentWorkflowType, run_document_workflow
-from .agents.deep_agent import build_workspace_deep_agent
 from .mcp_client import MCPToolClient
 from .secrets import MCPServerSecrets, discover_secrets_path, load_secrets
 from .tooling import WorkspaceResponse, list_registered_tools
@@ -32,19 +30,13 @@ from .tooling.tavily import TavilySearchClient, TavilySearchError
 app = typer.Typer(help="Tiangong AI Workspace CLI for managing local AI tooling.")
 mcp_app = typer.Typer(help="Interact with Model Context Protocol services configured for this workspace.")
 app.add_typer(mcp_app, name="mcp")
-docs_app = typer.Typer(help="Document-generation workflows driven by LangChain/LangGraph.")
-app.add_typer(docs_app, name="docs")
-agents_app = typer.Typer(help="General-purpose workspace agent workflows.")
-app.add_typer(agents_app, name="agents")
-knowledge_app = typer.Typer(help="Knowledge base utilities such as Dify dataset retrieval.")
-app.add_typer(knowledge_app, name="knowledge")
 
-WORKFLOW_SUMMARIES = {
-    DocumentWorkflowType.REPORT: "Business and technical reports with clear recommendations.",
-    DocumentWorkflowType.PATENT_DISCLOSURE: "Patent disclosure drafts capturing inventive details.",
-    DocumentWorkflowType.PLAN: "Execution or project plans with milestones and risks.",
-    DocumentWorkflowType.PROJECT_PROPOSAL: "Project proposals optimised for stakeholder buy-in.",
-}
+# (command, label) pairs for CLI integrations that the workspace cares about.
+REGISTERED_TOOLS: Iterable[Tuple[str, str]] = (
+    ("openai", "OpenAI CLI (Codex)"),
+    ("gcloud", "Google Cloud CLI (Gemini)"),
+    ("claude", "Claude Code CLI"),
+)
 
 
 def _get_version(command: str, version_args: Sequence[str] | None = None) -> str | None:
@@ -419,6 +411,42 @@ def list_mcp_tools(service_name: str) -> None:
             typer.echo(f"- {tool.name}: {description}")
         else:
             typer.echo(f"- {tool.name}")
+
+
+# ------------------------------------------------------------------ ANALYSIS FLOW
+
+
+@analysis_app.command("run")
+def run_analysis(output: Path = typer.Option(Path("output"), help="Output directory for generated artefacts.")) -> None:
+    """Execute the full carbon analysis workflow."""
+
+    try:
+        artifacts = run_full_analysis(output)
+    except Exception as exc:  # pragma: no cover - CLI guard
+        typer.secho(f"Analysis failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    typer.secho("分析完成，生成以下成果：", fg=typer.colors.GREEN)
+    typer.echo(f"- 清洗数据：{artifacts.cleaned_data_path}")
+    typer.echo(f"- 城市匹配日志：{artifacts.matching_log_path}")
+    typer.echo(f"- 缺失率报告：{artifacts.missing_report_path}")
+    typer.echo("- 图表输出：")
+    for label, path in artifacts.figure_paths.items():
+        typer.echo(f"  · {label}: {path}")
+    typer.echo(f"- 模型预测：{artifacts.model_predictions_path}")
+    typer.echo(f"- 模型评估：{artifacts.model_evaluation_path}")
+    typer.echo(f"- 报告：{artifacts.report_path}")
+
+    if artifacts.unmatched_emissions:
+        typer.secho(
+            f"警告：{len(artifacts.unmatched_emissions)} 个城市未在碳排放数据中匹配到标准代码。",
+            fg=typer.colors.YELLOW,
+        )
+    if artifacts.unmatched_stats:
+        typer.secho(
+            f"警告：{len(artifacts.unmatched_stats)} 个城市统计数据未匹配成功。",
+            fg=typer.colors.YELLOW,
+        )
 
 
 @mcp_app.command("invoke")
