@@ -90,7 +90,7 @@ uv run tiangong-workspace agents run "统计 data.csv 中的指标并绘图" --n
 可使用 `--no-shell`、`--no-python`、`--no-tavily`、`--no-dify`、`--no-document` 分别关闭对应工具；`--engine langgraph|deepagents` 切换运行后端；`--system-prompt` 和 `--model` 可自定义智能体设定。
 
 ## 文档工作流
-`docs` 子命令调用 LangGraph 工作流（检索→大纲→草稿），支持报告、计划书、专利交底书、项目申报书等：
+`docs` 子命令调用 LangGraph 工作流（检索→大纲→草稿→AI 审核[可选]），支持报告、计划书、专利交底书、项目申报书等：
 
 ```bash
 uv run tiangong-workspace docs list
@@ -106,8 +106,9 @@ uv run tiangong-workspace docs run report \
 - `--search-query`：自定义检索关键字（默认使用 topic）。
 - `--purpose`：模型用途提示（`general`、`deep_research`、`creative`）。
 - `--language`：设置输出语言（默认中文）。
+- `--ai-review`：在草稿生成后执行一次自动评审，输出可执行的修改建议。
 
-执行成功后 CLI 会输出结构化结果，并附上 Markdown 草稿示例。
+执行成功后 CLI 会输出结构化结果，包含草稿，启用 `--ai-review` 时还会附带评审意见。
 
 ## 联网研究
 `research` 命令直接调用 Tavily MCP 工具，可独立进行资料搜集：

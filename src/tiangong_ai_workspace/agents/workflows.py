@@ -60,6 +60,7 @@ class DocumentWorkflowConfig:
 
     workflow: DocumentWorkflowType
     topic: str
+    include_ai_review: bool = False
     instructions: Optional[str] = None
     audience: Optional[str] = None
     language: str = "zh"
@@ -81,6 +82,7 @@ class DocumentState(TypedDict, total=False):
     research_attachments: Sequence[Mapping[str, Any]]
     outline: str
     draft: str
+    ai_review: str
 
 
 def run_document_workflow(
@@ -167,9 +169,25 @@ def run_document_workflow(
         )
         return {**state, "draft": response}
 
+    def ai_review_node(state: DocumentState) -> DocumentState:
+        prompt = _build_review_prompt()
+        chain = prompt | model | StrOutputParser()
+        response = chain.invoke(
+            {
+                "topic": state["topic"],
+                "instructions": state.get("instructions", ""),
+                "language": state.get("language") or "zh",
+                "research": _summarise_research(state.get("research", [])),
+                "draft": state.get("draft", ""),
+                "template": template_text,
+            }
+        )
+        return {**state, "ai_review": response}
+
     graph.add_node("research", research_node)
     graph.add_node("outline", outline_node)
     graph.add_node("draft", draft_node)
+    graph.add_node("ai_review", ai_review_node)
 
     if config.include_research:
         graph.set_entry_point("research")
@@ -177,7 +195,11 @@ def run_document_workflow(
     else:
         graph.set_entry_point("outline")
     graph.add_edge("outline", "draft")
-    graph.add_edge("draft", END)
+    if config.include_ai_review:
+        graph.add_edge("draft", "ai_review")
+        graph.add_edge("ai_review", END)
+    else:
+        graph.add_edge("draft", END)
 
     app = graph.compile()
     initial_state: DocumentState = {
@@ -189,6 +211,7 @@ def run_document_workflow(
         "template_text": template_text,
         "research": [],
         "research_attachments": [],
+        "ai_review": "",
     }
 
     final_state = app.invoke(initial_state)
@@ -197,6 +220,7 @@ def run_document_workflow(
         "topic": config.topic,
         "outline": final_state.get("outline", ""),
         "draft": final_state.get("draft", ""),
+        "ai_review": final_state.get("ai_review", ""),
         "research": final_state.get("research", []),
         "attachments": final_state.get("research_attachments", []),
         "language": config.language,
@@ -254,6 +278,37 @@ def _build_draft_prompt() -> ChatPromptTemplate:
                     "Starting outline:\n{outline}\n"
                     "Template guidance:\n{template}\n"
                     "Write a complete draft in markdown."
+                ),
+            ),
+        ]
+    )
+
+
+def _build_review_prompt() -> ChatPromptTemplate:
+    return ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "You are a meticulous reviewer for a Nature Reviews Earth & Environment style Perspective. "
+                    "Stress-test the draft for clarity, balance, and factual consistency with supplied research. "
+                    "Flag hallucinations or missing scope details and propose concrete fixes."
+                ),
+            ),
+            (
+                "human",
+                (
+                    "Preferred language: {language}\n"
+                    "Topic: {topic}\n"
+                    "Specific instructions: {instructions}\n"
+                    "Template guidance:\n{template}\n"
+                    "Research summary:\n{research}\n"
+                    "Draft to review:\n{draft}\n"
+                    "Return a brief markdown review with:\n"
+                    "- Strengths (1-3 bullets)\n"
+                    "- Risks/defects (hallucination, scope mismatch, missing evidence)\n"
+                    "- Actionable revisions (bullet list, imperative voice)\n"
+                    "Keep the tone concise and specific."
                 ),
             ),
         ]

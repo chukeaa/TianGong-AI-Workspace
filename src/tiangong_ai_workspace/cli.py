@@ -323,6 +323,11 @@ def docs_run(
         "--search-query",
         help="Override the default Tavily query (defaults to the topic).",
     ),
+    ai_review: bool = typer.Option(
+        False,
+        "--ai-review",
+        help="Run an additional AI review pass after drafting.",
+    ),
     temperature: float = typer.Option(
         0.4,
         "--temperature",
@@ -351,6 +356,7 @@ def docs_run(
         language=language,
         include_research=not skip_research,
         search_query=search_query,
+        include_ai_review=ai_review,
         temperature=temperature,
         model_purpose=model_purpose,
     )
@@ -369,6 +375,10 @@ def docs_run(
         typer.echo("")
         typer.echo("# --- Draft Output ---")
         typer.echo(result.get("draft", ""))
+        if ai_review and result.get("ai_review"):
+            typer.echo("")
+            typer.echo("# --- AI Review ---")
+            typer.echo(result.get("ai_review", ""))
 
 
 # --------------------------------------------------------------------------- MCP

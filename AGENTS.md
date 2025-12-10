@@ -53,7 +53,7 @@ All three must pass before sharing updates.
 - `uv run tiangong-workspace check` — validate Python/uv/Node + registered CLIs.
 - `uv run tiangong-workspace tools --catalog` — list internal agent workflows from the registry.
 - `uv run tiangong-workspace docs list` — supported document workflows.
-- `uv run tiangong-workspace docs run <workflow> --topic ...` — generate drafts (supports `--json`, `--skip-research`, `--purpose`, etc.).
+- `uv run tiangong-workspace docs run <workflow> --topic ...` — generate drafts (supports `--json`, `--skip-research`, `--purpose`, `--ai-review`, etc.).
 - `uv run tiangong-workspace agents list` — view autonomous agents + runtime executors available to agents.
 - `uv run tiangong-workspace agents run "<task>" [--no-shell/--no-python/--no-tavily/--no-dify/--no-document --engine langgraph|deepagents]` — run the workspace DeepAgent with the preferred backend.
 - `uv run tiangong-workspace research "<query>"` — invoke Tavily MCP search (also supports `--json`).
