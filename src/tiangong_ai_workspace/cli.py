@@ -28,6 +28,7 @@ from .tooling.config import CLIToolConfig, load_workspace_config
 from .tooling.crossref import CrossrefClient, CrossrefClientError
 from .tooling.dify import DifyKnowledgeBaseClient, DifyKnowledgeBaseError
 from .tooling.embeddings import OpenAICompatibleEmbeddingClient, OpenAIEmbeddingError
+from .tooling.gemini import GeminiDeepResearchClient, GeminiDeepResearchError
 from .tooling.llm import ModelPurpose
 from .tooling.openalex import OpenAlexClient, OpenAlexClientError
 from .tooling.tavily import TavilySearchClient, TavilySearchError
@@ -47,6 +48,8 @@ crossref_app = typer.Typer(help="Crossref metadata utilities.")
 app.add_typer(crossref_app, name="crossref")
 openalex_app = typer.Typer(help="OpenAlex metadata utilities.")
 app.add_typer(openalex_app, name="openalex")
+gemini_app = typer.Typer(help="Gemini API helpers including the Deep Research agent.")
+app.add_typer(gemini_app, name="gemini")
 
 WORKFLOW_SUMMARIES = {
     DocumentWorkflowType.REPORT: "Business and technical reports with clear recommendations.",
@@ -529,6 +532,125 @@ def _emit_response(response: WorkspaceResponse, json_output: bool) -> None:
         typer.echo("Errors:")
         for err in response.errors:
             typer.echo(f"- {err}")
+
+
+@gemini_app.command("deep-research")
+def gemini_deep_research(
+    prompt: Optional[str] = typer.Argument(
+        None,
+        help="Research prompt for the Gemini Deep Research agent.",
+        metavar="PROMPT",
+    ),
+    interaction_id: Optional[str] = typer.Option(
+        None,
+        "--interaction-id",
+        help="Existing interaction ID to poll or inspect instead of creating a new task.",
+    ),
+    agent: Optional[str] = typer.Option(None, "--agent", help="Override the Deep Research agent name."),
+    file_search_store: list[str] = typer.Option(
+        [],
+        "--file-search-store",
+        help="Attach File Search store names to expose private data to the agent.",
+        multiple=True,
+    ),
+    poll: bool = typer.Option(False, "--poll", help="Poll until the interaction completes."),
+    poll_interval: float = typer.Option(
+        10.0,
+        "--poll-interval",
+        min=1.0,
+        help="Seconds to wait between polling requests (default: 10s).",
+    ),
+    max_polls: int = typer.Option(
+        360,
+        "--max-polls",
+        min=1,
+        help="Maximum number of polls before timing out (default: 360 for ~1 hour at 10s).",
+    ),
+    thinking_summaries: bool = typer.Option(
+        True,
+        "--thinking-summaries/--no-thinking-summaries",
+        help="Enable thinking summaries in the Deep Research agent config.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON response."),
+) -> None:
+    """Launch or poll a Gemini Deep Research task using background execution."""
+
+    if not prompt and not interaction_id:
+        typer.secho("Provide a PROMPT or --interaction-id to resume an existing task.", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    try:
+        client = GeminiDeepResearchClient()
+    except GeminiDeepResearchError as exc:
+        response = WorkspaceResponse.error("Gemini Deep Research client initialisation failed.", errors=(str(exc),), source="gemini")
+        _emit_response(response, json_output)
+        raise typer.Exit(code=3)
+
+    started = False
+    initial_result: Mapping[str, Any] | None = None
+    target_interaction_id = interaction_id
+    try:
+        if interaction_id:
+            initial_result = client.get_interaction(interaction_id)
+        else:
+            initial_result = client.start_research(
+                prompt or "",
+                agent=agent,
+                file_search_stores=file_search_store or None,
+                include_thinking_summaries=thinking_summaries,
+            )
+            started = True
+            target_interaction_id = initial_result.get("interaction_id")
+    except GeminiDeepResearchError as exc:
+        response = WorkspaceResponse.error("Gemini Deep Research request failed.", errors=(str(exc),), source="gemini")
+        _emit_response(response, json_output)
+        raise typer.Exit(code=4)
+
+    final_result = None
+    if poll:
+        if not target_interaction_id:
+            response = WorkspaceResponse.error(
+                "Cannot poll without an interaction ID.",
+                errors=("Interaction ID missing from start response.",),
+                source="gemini",
+            )
+            _emit_response(response, json_output)
+            raise typer.Exit(code=5)
+        try:
+            final_result = client.poll_until_complete(
+                target_interaction_id,
+                interval=poll_interval,
+                max_attempts=max_polls,
+            )
+        except GeminiDeepResearchError as exc:
+            response = WorkspaceResponse.error("Gemini Deep Research polling failed.", errors=(str(exc),), source="gemini")
+            _emit_response(response, json_output)
+            raise typer.Exit(code=6)
+
+    payload = {
+        "interaction": initial_result,
+        "interaction_id": target_interaction_id,
+        "final_interaction": final_result,
+        "polling": poll,
+        "started": started,
+    }
+    message = "Gemini Deep Research run completed." if final_result else "Gemini Deep Research request submitted."
+    response = WorkspaceResponse.ok(payload=payload, message=message, source="gemini")
+    _emit_response(response, json_output)
+
+    if not json_output:
+        typer.echo("")
+        typer.echo(f"Interaction ID: {target_interaction_id or '(unknown)'}")
+        typer.echo(f"Current status: {initial_result.get('status') if isinstance(initial_result, Mapping) else 'unknown'}")
+        if final_result:
+            typer.echo(f"Final status: {final_result.get('status')}")
+            interaction_body = final_result.get("interaction") if isinstance(final_result, Mapping) else None
+            outputs = interaction_body.get("outputs") if isinstance(interaction_body, Mapping) else None
+            if outputs:
+                typer.echo("Final output:")
+                typer.echo(_format_result(outputs[-1]))
+            else:
+                typer.echo("No outputs returned yet. Inspect the JSON payload for details.")
 
 
 @app.command()

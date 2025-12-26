@@ -19,6 +19,8 @@ __all__ = [
     "OpenAlexWorkLookupOutput",
     "OpenAlexCitedByInput",
     "OpenAlexCitedByOutput",
+    "GeminiDeepResearchInput",
+    "GeminiDeepResearchOutput",
     "DocumentToolInput",
     "DocumentToolOutput",
     "DifyKnowledgeBaseInput",
@@ -95,6 +97,26 @@ class TavilySearchInput(BaseModel):
 class TavilySearchOutput(BaseModel):
     status: Literal["success", "error"]
     data: Mapping[str, Any] | None = None
+    message: str | None = None
+
+
+class GeminiDeepResearchInput(BaseModel):
+    prompt: str = Field(..., description="Research prompt sent to the Gemini Deep Research agent.")
+    agent: str | None = Field(default=None, description="Override the Deep Research agent name (defaults to secrets).")
+    file_search_stores: list[str] | None = Field(
+        default=None,
+        description="Optional File Search store names to expose private data.",
+    )
+    include_thinking_summaries: bool = Field(
+        default=True,
+        description="Enable thinking summaries in the agent config.",
+    )
+
+
+class GeminiDeepResearchOutput(BaseModel):
+    status: Literal["success", "error"]
+    interaction: Mapping[str, Any] | None = None
+    interaction_id: str | None = None
     message: str | None = None
 
 
@@ -293,6 +315,7 @@ _DESCRIPTOR_SCHEMAS: Mapping[str, _SchemaPair] = {
     "docs.patent_disclosure": _SchemaPair(DocumentToolInput, DocumentToolOutput),
     "docs.plan": _SchemaPair(DocumentToolInput, DocumentToolOutput),
     "docs.project_proposal": _SchemaPair(DocumentToolInput, DocumentToolOutput),
+    "research.gemini_deep_research": _SchemaPair(GeminiDeepResearchInput, GeminiDeepResearchOutput),
 }
 
 

@@ -9,6 +9,7 @@ from .crossref import CrossrefClient
 from .dify import DifyKnowledgeBaseClient
 from .embeddings import OpenAICompatibleEmbeddingClient
 from .executors import PythonExecutor, ShellExecutor
+from .gemini import GeminiDeepResearchClient
 from .neo4j import Neo4jClient
 from .openalex import OpenAlexClient
 from .registry import ToolDescriptor, list_registered_tools
@@ -18,6 +19,7 @@ __all__ = [
     "CrossrefClient",
     "OpenAlexClient",
     "DifyKnowledgeBaseClient",
+    "GeminiDeepResearchClient",
     "OpenAICompatibleEmbeddingClient",
     "PythonExecutor",
     "ResponsePayload",

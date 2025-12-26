@@ -3,16 +3,16 @@
 ## 项目简介
 - 通用的 AI CLI 工作区，用于统一管理 Codex、Gemini CLI、Claude Code 等智能体工具，以及日常文档创作任务。
 - 基于 `uv` 管理 Python 依赖，内置 LangChain、LangGraph 等现代化 Agent 组件，便于快速扩展。
-- 提供 `tiangong-workspace` 命令行应用：可查看环境信息、执行文档工作流、触发 Tavily 联网检索、调用 Crossref/OpenAlex 文献元数据、运行自主工作流智能体。
+- 提供 `tiangong-workspace` 命令行应用：可查看环境信息、执行文档工作流、触发 Tavily 联网检索、调用 Crossref/OpenAlex 文献元数据、启动 Gemini Deep Research 异步研究，并运行自主工作流智能体。
 - 集成 Tavily MCP 搜索 + LangGraph 自主 Agent，支持联网调研、Shell/Python 执行、LangChain 工作流协同，能够灵活处理未预设的复杂任务。
 - 跨平台安装脚本覆盖 Ubuntu、macOS 与 Windows，可按需安装 Node.js、Pandoc/MiKTeX 等可选组件。
 
 ## 目录结构
 - `install_*.sh` / `install_windows.ps1`：一键安装脚本。
 - `src/tiangong_ai_workspace/`：工作区 Python 包与 CLI 入口。
-  - `cli.py`：Typer CLI，包含 `docs`、`agents`、`research`、`crossref`、`openalex` 与 `mcp` 子命令。
+  - `cli.py`：Typer CLI，包含 `docs`、`agents`、`gemini`、`research`、`crossref`、`openalex` 与 `mcp` 子命令。
   - `agents/`：LangGraph 文档工作流 (`workflows.py`)、LangGraph/DeepAgents 双引擎自主智能体 (`deep_agent.py`)、具备 Pydantic 入参与输出校验的 LangChain Tool 封装 (`tools.py`)。
-  - `tooling/`：响应封装、工作区配置加载 (`config.py`)、工具注册表、模型路由器 (`llm.py`)、统一 Tool Schema (`tool_schemas.py`)、Tavily MCP 搜索客户端、Crossref Works API 客户端 (`crossref.py`)、OpenAlex Works/Cited-by 客户端 (`openalex.py`)、Dify 知识库客户端 (`dify.py`)、Neo4j 图数据库客户端 (`neo4j.py`) 以及带审计的 Shell/Python 执行器。
+  - `tooling/`：响应封装、工作区配置加载 (`config.py`)、工具注册表、模型路由器 (`llm.py`)、统一 Tool Schema (`tool_schemas.py`)、Tavily MCP 搜索客户端、Gemini Deep Research Interactions API 客户端 (`gemini.py`)、Crossref Works API 客户端 (`crossref.py`)、OpenAlex Works/Cited-by 客户端 (`openalex.py`)、Dify 知识库客户端 (`dify.py`)、Neo4j 图数据库客户端 (`neo4j.py`) 以及带审计的 Shell/Python 执行器。
   - `templates/`：不同文档类型的结构提示。
   - `mcp_client.py`：同步封装的 MCP 客户端。
   - `secrets.py`：凭证加载逻辑。
@@ -60,6 +60,7 @@ uv run tiangong-workspace check         # 检查 Python、uv、Node.js 以及外
 uv run tiangong-workspace tools         # 查看已配置的外部 CLI 列表
 uv run tiangong-workspace tools --catalog   # 查看内部工作流与工具注册表
 uv run tiangong-workspace agents list       # 查看自主智能体与运行时代码执行器
+uv run tiangong-workspace gemini deep-research "调研主题" --poll   # 启动/轮询 Gemini 深度研究
 uv run tiangong-workspace knowledge retrieve "查询关键词"  # 直接检索 Dify 知识库
 uv run tiangong-workspace crossref journal-works "1234-5678" --query "LLM"  # 查询 Crossref 期刊文献
 uv run tiangong-workspace openalex work "10.1016/S0921-3449(00)00060-4"      # 获取 OpenAlex 元数据
@@ -124,6 +125,24 @@ uv run tiangong-workspace research "AI 写作辅助工具对比" --json
 ```
 
 如需使用自定义 MCP 服务名称或工具名称，可分别通过 `--service` 与 `--tool-name` 覆盖。
+
+## Gemini 深度研究
+`gemini deep-research` 通过 Interactions API 以 `background=true`、`store=true` 方式启动 Gemini Deep Research 任务，可按需轮询直至完成。默认启用思维摘要（thinking_summaries=auto），便于恢复或继续跟进长任务。
+
+```bash
+# 启动并每 10 秒轮询
+uv run tiangong-workspace gemini deep-research "调研 Google TPU 发展史" --poll
+
+# 使用已存在的 interaction ID 继续轮询
+uv run tiangong-workspace gemini deep-research --interaction-id "interactions/123" --poll --poll-interval 5
+
+# 将 File Search Store 暴露给 Deep Research
+uv run tiangong-workspace gemini deep-research "对比公司 2025 财报与公开新闻" \
+  --file-search-store fileSearchStores/my-store \
+  --poll
+```
+
+可通过 `--max-polls` 控制最长轮询次数（默认 360 次，约 1 小时/10 秒间隔）；追加 `--json` 可返回完整交互负载，方便后续衔接补问或自定义轮询。
 
 ## Crossref 文献
 `crossref` 子命令直接访问 Crossref Works API 的 `/journals/{issn}/works` 接口，便于在智能体中查询期刊文献元数据：
@@ -192,7 +211,16 @@ uv run tiangong-workspace embeddings generate "text A" "text B" \
 ## Secrets 配置
 1. 复制 `.sercrets/secrets.example.toml` 为 `.sercrets/secrets.toml`（保持文件不入库）。
 2. 填写 `openai.api_key`，可选配置 `model`、`chat_model`、`deep_research_model`。
-3. 按示例补充 Tavily MCP 区块：
+3. 配置 Gemini Deep Research 所需的 Interactions API 密钥：
+
+```toml
+[gemini]
+api_key = "<YOUR_GEMINI_API_KEY>"
+agent = "deep-research-pro-preview-12-2025"
+api_endpoint = "https://generativelanguage.googleapis.com"
+```
+
+4. 按示例补充 Tavily MCP 区块：
 
 ```toml
 [tavily_web_mcp]
@@ -204,7 +232,7 @@ api_key_header = "Authorization"
 api_key_prefix = "Bearer"
 ```
 
-4. 按需在 `[neo4j]` 区块填入图数据库连接信息（未配置时智能体会自动跳过 Neo4j 工具）：
+5. 按需在 `[neo4j]` 区块填入图数据库连接信息（未配置时智能体会自动跳过 Neo4j 工具）：
 
 ```toml
 [neo4j]
@@ -214,7 +242,7 @@ password = "<YOUR_NEO4J_PASSWORD>"
 database = "neo4j"
 ```
 
-5. 若需直接访问 Dify 知识库，请新增以下配置（示例值可替换为实际实例）：
+6. 若需直接访问 Dify 知识库，请新增以下配置（示例值可替换为实际实例）：
 
 ```toml
 [dify_knowledge_base]
@@ -225,7 +253,7 @@ dataset_id = "53a90891-853c-4bf0-bf39-96dd84e11501"
 
 配置完成后即可使用 `knowledge retrieve` 命令或 Dify LangChain Tool。
 
-6. 若需启用 OpenAI 兼容的 embedding 生成（支持本地/私有部署服务），可按以下示例添加配置，其中 `api_key` 允许留空：
+7. 若需启用 OpenAI 兼容的 embedding 生成（支持本地/私有部署服务），可按以下示例添加配置，其中 `api_key` 允许留空：
 
 ```toml
 [openai_compatitble_embedding]

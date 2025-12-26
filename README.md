@@ -3,16 +3,16 @@
 ## Project Overview
 - General-purpose AI CLI workspace to manage Codex, Gemini CLI, Claude Code, and routine document authoring tasks in one place.
 - Python dependencies are managed by `uv`; LangChain and LangGraph components are built in for fast extension.
-- Provides the `tiangong-workspace` CLI: inspect environment info, run document workflows, trigger Tavily web research, call Crossref/OpenAlex metadata endpoints, and launch autonomous agents.
+- Provides the `tiangong-workspace` CLI: inspect environment info, run document workflows, trigger Tavily web research, call Crossref/OpenAlex metadata endpoints, launch Gemini Deep Research runs, and orchestrate autonomous agents.
 - Includes Tavily MCP search plus LangGraph autonomous agents that can browse the web, execute Shell/Python, and orchestrate LangChain workflows to handle open-ended tasks.
 - Cross-platform install scripts cover Ubuntu, macOS, and Windows, with optional Node.js and Pandoc/MiKTeX.
 
 ## Directory Layout
 - `install_*.sh` / `install_windows.ps1`: one-click installers.
 - `src/tiangong_ai_workspace/`: workspace Python package and CLI entrypoint.
-  - `cli.py`: Typer CLI with `docs`, `agents`, `research`, `crossref`, `openalex`, and `mcp` subcommands.
+  - `cli.py`: Typer CLI with `docs`, `agents`, `gemini`, `research`, `knowledge`, `embeddings`, `crossref`, `openalex`, and `mcp` subcommands.
   - `agents/`: LangGraph document workflows (`workflows.py`), dual-engine autonomous agents for LangGraph/DeepAgents (`deep_agent.py`), and LangChain Tools with Pydantic input/output validation (`tools.py`).
-  - `tooling/`: response envelope, workspace config loader (`config.py`), tool registry, model router (`llm.py`), shared tool schemas (`tool_schemas.py`), Tavily MCP client, Crossref Works API client (`crossref.py`), OpenAlex Works/Cited-by client (`openalex.py`), Dify knowledge-base client (`dify.py`), Neo4j client (`neo4j.py`), and audited Shell/Python executors.
+  - `tooling/`: response envelope, workspace config loader (`config.py`), tool registry, model router (`llm.py`), shared tool schemas (`tool_schemas.py`), Tavily MCP client, Gemini Deep Research Interactions API client (`gemini.py`), Crossref Works API client (`crossref.py`), OpenAlex Works/Cited-by client (`openalex.py`), Dify knowledge-base client (`dify.py`), Neo4j client (`neo4j.py`), and audited Shell/Python executors.
   - `templates/`: structural prompts for different document types.
   - `mcp_client.py`: synchronous MCP client wrapper.
   - `secrets.py`: credential loader.
@@ -60,6 +60,7 @@ uv run tiangong-workspace check         # validate Python, uv, Node.js, and exte
 uv run tiangong-workspace tools         # list detected external CLIs
 uv run tiangong-workspace tools --catalog   # list internal workflows and tool registry entries
 uv run tiangong-workspace agents list       # list autonomous agents and runtime executors
+uv run tiangong-workspace gemini deep-research "Research prompt" --poll   # launch/poll Gemini Deep Research
 uv run tiangong-workspace knowledge retrieve "query keywords"  # query the Dify knowledge base directly
 uv run tiangong-workspace crossref journal-works "1234-5678" --query "LLM"
 uv run tiangong-workspace openalex work "10.1016/S0921-3449(00)00060-4"
@@ -124,6 +125,24 @@ uv run tiangong-workspace research "AI writing assistants comparison" --json
 ```
 
 Override MCP service or tool names with `--service` and `--tool-name` if needed.
+
+## Gemini Deep Research
+`gemini deep-research` launches the Gemini Deep Research agent via the Interactions API with `background=true` and `store=true`, then optionally polls until completion. Thinking summaries are enabled by default for better reconnect/resume behaviour.
+
+```bash
+# Start a run and poll every 10s until it finishes
+uv run tiangong-workspace gemini deep-research "Research the history of Google TPUs" --poll
+
+# Resume/poll an existing interaction
+uv run tiangong-workspace gemini deep-research --interaction-id "interactions/123" --poll --poll-interval 5
+
+# Attach File Search stores for private data access
+uv run tiangong-workspace gemini deep-research "Compare our 2025 fiscal report to public news" \
+  --file-search-store fileSearchStores/my-store \
+  --poll
+```
+
+Use `--max-polls` to bound long runs (default: 360 polls ≈ 1 hour at 10s). `--json` returns the full interaction payload for chaining follow-up prompts or custom polling.
 
 ## Crossref Literature
 `crossref` accesses the Works API `/journals/{issn}/works` endpoint for journal metadata:
@@ -192,7 +211,16 @@ Default output is a summary; `--json` returns a structured `WorkspaceResponse` w
 ## Secrets Configuration
 1) Copy `.sercrets/secrets.example.toml` to `.sercrets/secrets.toml` (keep it out of version control).
 2) Fill `openai.api_key`; optionally set `model`, `chat_model`, and `deep_research_model`.
-3) Add Tavily MCP settings, e.g.:
+3) Configure Gemini Deep Research credentials for the Interactions API:
+
+```toml
+[gemini]
+api_key = "<YOUR_GEMINI_API_KEY>"
+agent = "deep-research-pro-preview-12-2025"
+api_endpoint = "https://generativelanguage.googleapis.com"
+```
+
+4) Add Tavily MCP settings, e.g.:
 
 ```toml
 [tavily_web_mcp]
@@ -204,7 +232,7 @@ api_key_header = "Authorization"
 api_key_prefix = "Bearer"
 ```
 
-4) Add Neo4j connection info if needed (agents skip Neo4j when absent):
+5) Add Neo4j connection info if needed (agents skip Neo4j when absent):
 
 ```toml
 [neo4j]
@@ -214,7 +242,7 @@ password = "<YOUR_NEO4J_PASSWORD>"
 database = "neo4j"
 ```
 
-5) To access a Dify knowledge base directly:
+6) To access a Dify knowledge base directly:
 
 ```toml
 [dify_knowledge_base]
@@ -223,7 +251,7 @@ api_key = "dataset-XXXX"
 dataset_id = "53a90891-853c-4bf0-bf39-96dd84e11501"
 ```
 
-6) To enable OpenAI-compatible embedding generation (local/private services supported), add:
+7) To enable OpenAI-compatible embedding generation (local/private services supported), add:
 
 ```toml
 [openai_compatitble_embedding]

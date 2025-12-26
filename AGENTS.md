@@ -6,7 +6,7 @@
 - Primary entry point: `uv run tiangong-workspace`, featuring LangChain/LangGraph document agents, LangGraph planning agents, and Tavily MCP research.
 
 ## Repository Layout
-- `src/tiangong_ai_workspace/cli.py`: Typer CLI with `docs`, `agents`, `research`, and `mcp` subcommands plus structured JSON output support.
+- `src/tiangong_ai_workspace/cli.py`: Typer CLI with `docs`, `agents`, `gemini`, `research`, and `mcp` subcommands plus structured JSON output support.
 - `src/tiangong_ai_workspace/agents/`:
   - `workflows.py`: LangChain/LangGraph document workflows (reports, plans, patent, proposals).
   - `deep_agent.py`: Workspace autonomous agent supporting both native LangGraph loops and the `deepagents` runtime.
@@ -18,6 +18,7 @@
   - `tool_schemas.py`: Pydantic schemas exported to LangChain tools and registry metadata.
   - `llm.py`: Provider-agnostic model router (OpenAI provider registered by default).
   - `embeddings.py`: OpenAI-compatible embedding client surfaced via CLI/registry.
+  - `gemini.py`: Gemini Deep Research client for the Interactions API with polling helpers.
   - `tavily.py`: Tavily MCP client with retry + structured payloads.
   - `crossref.py`: HTTP client for Crossref Works API `/journals/{issn}/works`.
   - `openalex.py`: HTTP client for OpenAlex works lookup and cited-by queries.
@@ -59,6 +60,7 @@ All three must pass before sharing updates.
 - `uv run tiangong-workspace agents list` — view autonomous agents + runtime executors available to agents.
 - `uv run tiangong-workspace agents run "<task>" [--no-shell/--no-python/--no-tavily/--no-dify/--no-crossref/--no-openalex/--no-document --engine langgraph|deepagents]` — run the workspace DeepAgent with the preferred backend.
 - `uv run tiangong-workspace research "<query>"` — invoke Tavily MCP search (also supports `--json`).
+- `uv run tiangong-workspace gemini deep-research "<prompt>" [--poll/--interaction-id ...]` — launch or poll Gemini Deep Research interactions via the Interactions API.
 - `uv run tiangong-workspace openalex work "<doi>"` — fetch an OpenAlex work record.
 - `uv run tiangong-workspace openalex cited-by "<work_id>" [--from ... --to ...]` — list citing works with optional date filters.
 - `uv run tiangong-workspace crossref journal-works "<issn>" [--query ...]` — fetch journal works via Crossref `/journals/{issn}/works`.
@@ -71,6 +73,7 @@ Use `--json` for machine-readable responses suitable for chaining agents.
 ## Secrets
 - Populate `.sercrets/secrets.toml` using the example file.
 - Required: `openai.api_key`. Optional: `model`, `chat_model`, `deep_research_model`.
+- Gemini Interactions API: `gemini.api_key` and optional `agent`/`api_endpoint` enable the `gemini deep-research` CLI and registry tool.
 - Tavily section needs `service_name`, `url`, and `api_key` (`Authorization: Bearer` header).
 - Neo4j section (optional) defines `uri`, `username`, `password`, and `database`; when absent the Neo4j LangChain tool is automatically disabled.
 - `dify_knowledge_base` defines `api_base_url`, `api_key`, and `dataset_id`; this powers the `knowledge retrieve` CLI and the LangChain Dify tool (no MCP block required).
